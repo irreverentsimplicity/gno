@@ -27,6 +27,11 @@ func (m *Machine) doOpPrecall() {
 	case TypeValue:
 		// Do not pop type yet.
 		// No need for frames.
+		xv := m.PeekValue(1)
+		if cx.GetAttribute(ATTR_SHIFT_RHS) == true {
+			xv.AssertNonNegative("runtime error: negative shift amount")
+		}
+
 		m.PushOp(OpConvert)
 		if debug {
 			if len(cx.Args) != 1 {
@@ -57,6 +62,18 @@ func (m *Machine) doOpCall() {
 	// Create new block scope.
 	clo := fr.Func.GetClosure(m.Store)
 	b := m.Alloc.NewBlock(fr.Func.GetSource(m.Store), clo)
+
+	// Copy *FuncValue.Captures into block
+	// NOTE: addHeapCapture in preprocess ensures order.
+	if len(fv.Captures) != 0 {
+		if len(fv.Captures) > len(b.Values) {
+			panic("should not happen, length of captured variables must not exceed the number of values")
+		}
+		for i := 0; i < len(fv.Captures); i++ {
+			b.Values[len(b.Values)-len(fv.Captures)+i] = fv.Captures[i].Copy(m.Alloc)
+		}
+	}
+
 	m.PushBlock(b)
 	if fv.nativeBody == nil && fv.NativePkg != "" {
 		// native function, unmarshaled so doesn't have nativeBody yet
@@ -78,6 +95,7 @@ func (m *Machine) doOpCall() {
 			// Initialize return variables with default value.
 			numParams := len(ft.Params)
 			for i, rt := range ft.Results {
+				// results/parameters never are heap use/closure.
 				ptr := b.GetPointerToInt(nil, numParams+i)
 				dtv := defaultTypedValue(m.Alloc, rt.Type)
 				ptr.Assign2(m.Alloc, nil, nil, dtv, false)
@@ -247,7 +265,7 @@ func (m *Machine) doOpReturnFromBlock() {
 // deferred statements can refer to results with name
 // expressions.
 func (m *Machine) doOpReturnToBlock() {
-	cfr := m.LastCallFrame(1)
+	cfr := m.MustLastCallFrame(1)
 	ft := cfr.Func.GetType(m.Store)
 	numParams := len(ft.Params)
 	numResults := len(ft.Results)
@@ -260,10 +278,11 @@ func (m *Machine) doOpReturnToBlock() {
 }
 
 func (m *Machine) doOpReturnCallDefers() {
-	cfr := m.LastCallFrame(1)
+	cfr := m.MustLastCallFrame(1)
 	dfr, ok := cfr.PopDefer()
 	if !ok {
 		// Done with defers.
+		m.DeferPanicScope = 0
 		m.ForcePopOp()
 		if len(m.Exceptions) > 0 {
 			// In a state of panic (not return).
@@ -272,6 +291,9 @@ func (m *Machine) doOpReturnCallDefers() {
 		}
 		return
 	}
+
+	m.DeferPanicScope = dfr.PanicScope
+
 	// Call last deferred call.
 	// NOTE: the following logic is largely duplicated in doOpCall().
 	// Convert if variadic argument.
@@ -283,6 +305,15 @@ func (m *Machine) doOpReturnCallDefers() {
 		// Create new block scope for defer.
 		clo := dfr.Func.GetClosure(m.Store)
 		b := m.Alloc.NewBlock(fv.GetSource(m.Store), clo)
+		// copy values from captures
+		if len(fv.Captures) != 0 {
+			if len(fv.Captures) > len(b.Values) {
+				panic("should not happen, length of captured variables must not exceed the number of values")
+			}
+			for i := 0; i < len(fv.Captures); i++ {
+				b.Values[len(b.Values)-len(fv.Captures)+i] = fv.Captures[i].Copy(m.Alloc)
+			}
+		}
 		m.PushBlock(b)
 		if fv.nativeBody == nil {
 			fbody := fv.GetBodyFromSource(m.Store)
@@ -347,7 +378,7 @@ func (m *Machine) doOpReturnCallDefers() {
 
 func (m *Machine) doOpDefer() {
 	lb := m.LastBlock()
-	cfr := m.LastCallFrame(1)
+	cfr := m.MustLastCallFrame(1)
 	ds := m.PopStmt().(*DeferStmt)
 	// Pop arguments
 	numArgs := len(ds.Call.Args)
@@ -361,10 +392,11 @@ func (m *Machine) doOpDefer() {
 	case *FuncValue:
 		// TODO what if value is NativeValue?
 		cfr.PushDefer(Defer{
-			Func:   cv,
-			Args:   args,
-			Source: ds,
-			Parent: lb,
+			Func:       cv,
+			Args:       args,
+			Source:     ds,
+			Parent:     lb,
+			PanicScope: m.PanicScope,
 		})
 	case *BoundMethodValue:
 		if debug {
@@ -381,17 +413,19 @@ func (m *Machine) doOpDefer() {
 		args2[0] = cv.Receiver
 		copy(args2[1:], args)
 		cfr.PushDefer(Defer{
-			Func:   cv.Func,
-			Args:   args2,
-			Source: ds,
-			Parent: lb,
+			Func:       cv.Func,
+			Args:       args2,
+			Source:     ds,
+			Parent:     lb,
+			PanicScope: m.PanicScope,
 		})
 	case *NativeValue:
 		cfr.PushDefer(Defer{
-			GoFunc: cv,
-			Args:   args,
-			Source: ds,
-			Parent: lb,
+			GoFunc:     cv,
+			Args:       args,
+			Source:     ds,
+			Parent:     lb,
+			PanicScope: m.PanicScope,
 		})
 	default:
 		panic("should not happen")
@@ -410,6 +444,7 @@ func (m *Machine) doOpPanic2() {
 		// Recovered from panic
 		m.PushOp(OpReturnFromBlock)
 		m.PushOp(OpReturnCallDefers)
+		m.PanicScope = 0
 	} else {
 		// Keep panicking
 		last := m.PopUntilLastCallFrame()
@@ -419,7 +454,9 @@ func (m *Machine) doOpPanic2() {
 			for i, ex := range m.Exceptions {
 				exs[i] = ex.Sprint(m)
 			}
-			panic(strings.Join(exs, "\n\t"))
+			panic(UnhandledPanicError{
+				Descriptor: strings.Join(exs, "\n\t"),
+			})
 		}
 		m.PushOp(OpPanic2)
 		m.PushOp(OpReturnCallDefers) // XXX rename, not return?

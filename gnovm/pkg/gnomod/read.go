@@ -249,7 +249,7 @@ func (in *input) readToken() {
 
 			// Otherwise, save comment for later attachment to syntax tree.
 			in.endToken(_EOLCOMMENT)
-			in.comments = append(in.comments, modfile.Comment{in.token.pos, in.token.text, suffix})
+			in.comments = append(in.comments, modfile.Comment{Start: in.token.pos, Token: in.token.text, Suffix: suffix})
 			return
 		}
 
@@ -796,6 +796,8 @@ func parseReplace(filename string, line *modfile.Line, verb string, args []strin
 	}, nil
 }
 
+var reDeprecation = regexp.MustCompile(`(?s)(?:^|\n\n)Deprecated: *(.*?)(?:$|\n\n)`)
+
 // parseDeprecation extracts the text of comments on a "module" directive and
 // extracts a deprecation message from that.
 //
@@ -806,8 +808,7 @@ func parseReplace(filename string, line *modfile.Line, verb string, args []strin
 // parseDeprecation returns the message from the first.
 func parseDeprecation(block *modfile.LineBlock, line *modfile.Line) string {
 	text := parseDirectiveComment(block, line)
-	rx := regexp.MustCompile(`(?s)(?:^|\n\n)Deprecated: *(.*?)(?:$|\n\n)`)
-	m := rx.FindStringSubmatch(text)
+	m := reDeprecation.FindStringSubmatch(text)
 	if m == nil {
 		return ""
 	}

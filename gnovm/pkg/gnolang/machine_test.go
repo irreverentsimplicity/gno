@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"testing"
 
-	dbm "github.com/gnolang/gno/tm2/pkg/db"
-	"github.com/gnolang/gno/tm2/pkg/std"
+	"github.com/gnolang/gno/gnovm"
+	"github.com/gnolang/gno/tm2/pkg/db/memdb"
 	"github.com/gnolang/gno/tm2/pkg/store/dbadapter"
 	"github.com/gnolang/gno/tm2/pkg/store/iavl"
 	stypes "github.com/gnolang/gno/tm2/pkg/store/types"
-	"github.com/jaekwon/testify/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 func BenchmarkCreateNewMachine(b *testing.B) {
@@ -22,15 +22,15 @@ func BenchmarkCreateNewMachine(b *testing.B) {
 func TestRunMemPackageWithOverrides_revertToOld(t *testing.T) {
 	// A test to check revertToOld is correctly putting back an old value,
 	// after preprocessing fails.
-	db := dbm.NewMemDB()
+	db := memdb.NewMemDB()
 	baseStore := dbadapter.StoreConstructor(db, stypes.StoreOptions{})
 	iavlStore := iavl.StoreConstructor(db, stypes.StoreOptions{})
 	store := NewStore(nil, baseStore, iavlStore)
 	m := NewMachine("std", store)
-	m.RunMemPackageWithOverrides(&std.MemPackage{
+	m.RunMemPackageWithOverrides(&gnovm.MemPackage{
 		Name: "std",
 		Path: "std",
-		Files: []*std.MemFile{
+		Files: []*gnovm.MemFile{
 			{Name: "a.gno", Body: `package std; func Redecl(x int) string { return "1" }`},
 		},
 	}, true)
@@ -38,10 +38,10 @@ func TestRunMemPackageWithOverrides_revertToOld(t *testing.T) {
 		defer func() {
 			p = fmt.Sprint(recover())
 		}()
-		m.RunMemPackageWithOverrides(&std.MemPackage{
+		m.RunMemPackageWithOverrides(&gnovm.MemPackage{
 			Name: "std",
 			Path: "std",
-			Files: []*std.MemFile{
+			Files: []*gnovm.MemFile{
 				{Name: "b.gno", Body: `package std; func Redecl(x int) string { var y string; _, _ = y; return "2" }`},
 			},
 		}, true)
@@ -53,6 +53,6 @@ func TestRunMemPackageWithOverrides_revertToOld(t *testing.T) {
 	// Check last value, assuming it is the result of Redecl.
 	v := m.Values[0]
 	assert.NotNil(t, v)
-	assert.Equal(t, v.T.Kind(), StringKind)
-	assert.Equal(t, v.V, StringValue("1"))
+	assert.Equal(t, StringKind, v.T.Kind())
+	assert.Equal(t, StringValue("1"), v.V)
 }

@@ -1,8 +1,10 @@
 package vm
 
 import (
+	"fmt"
 	"strings"
 
+	"github.com/gnolang/gno/gnovm"
 	gno "github.com/gnolang/gno/gnovm/pkg/gnolang"
 	"github.com/gnolang/gno/tm2/pkg/amino"
 	"github.com/gnolang/gno/tm2/pkg/crypto"
@@ -15,15 +17,15 @@ import (
 
 // MsgAddPackage - create and initialize new package
 type MsgAddPackage struct {
-	Creator crypto.Address  `json:"creator" yaml:"creator"`
-	Package *std.MemPackage `json:"package" yaml:"package"`
-	Deposit std.Coins       `json:"deposit" yaml:"deposit"`
+	Creator crypto.Address    `json:"creator" yaml:"creator"`
+	Package *gnovm.MemPackage `json:"package" yaml:"package"`
+	Deposit std.Coins         `json:"deposit" yaml:"deposit"`
 }
 
 var _ std.Msg = MsgAddPackage{}
 
 // NewMsgAddPackage - upload a package with files.
-func NewMsgAddPackage(creator crypto.Address, pkgPath string, files []*std.MemFile) MsgAddPackage {
+func NewMsgAddPackage(creator crypto.Address, pkgPath string, files []*gnovm.MemFile) MsgAddPackage {
 	var pkgName string
 	for _, file := range files {
 		if strings.HasSuffix(file.Name, ".gno") {
@@ -33,7 +35,7 @@ func NewMsgAddPackage(creator crypto.Address, pkgPath string, files []*std.MemFi
 	}
 	return MsgAddPackage{
 		Creator: creator,
-		Package: &std.MemPackage{
+		Package: &gnovm.MemPackage{
 			Name:  pkgName,
 			Path:  pkgPath,
 			Files: files,
@@ -56,7 +58,7 @@ func (msg MsgAddPackage) ValidateBasic() error {
 		return ErrInvalidPkgPath("missing package path")
 	}
 	if !msg.Deposit.IsValid() {
-		return std.ErrTxDecode("invalid deposit")
+		return std.ErrInvalidCoins(msg.Deposit.String())
 	}
 	// XXX validate files.
 	return nil
@@ -112,8 +114,11 @@ func (msg MsgCall) ValidateBasic() error {
 	if msg.Caller.IsZero() {
 		return std.ErrInvalidAddress("missing caller address")
 	}
-	if msg.PkgPath == "" { // XXX
+	if msg.PkgPath == "" {
 		return ErrInvalidPkgPath("missing package path")
+	}
+	if !gno.IsRealmPath(msg.PkgPath) {
+		return ErrInvalidPkgPath("pkgpath must be of a realm")
 	}
 	if msg.Func == "" { // XXX
 		return ErrInvalidExpr("missing function to call")
@@ -141,14 +146,14 @@ func (msg MsgCall) GetReceived() std.Coins {
 
 // MsgRun - executes arbitrary Gno code.
 type MsgRun struct {
-	Caller  crypto.Address  `json:"caller" yaml:"caller"`
-	Send    std.Coins       `json:"send" yaml:"send"`
-	Package *std.MemPackage `json:"package" yaml:"package"`
+	Caller  crypto.Address    `json:"caller" yaml:"caller"`
+	Send    std.Coins         `json:"send" yaml:"send"`
+	Package *gnovm.MemPackage `json:"package" yaml:"package"`
 }
 
 var _ std.Msg = MsgRun{}
 
-func NewMsgRun(caller crypto.Address, send std.Coins, files []*std.MemFile) MsgRun {
+func NewMsgRun(caller crypto.Address, send std.Coins, files []*gnovm.MemFile) MsgRun {
 	for _, file := range files {
 		if strings.HasSuffix(file.Name, ".gno") {
 			pkgName := string(gno.PackageNameFromFileBody(file.Name, file.Body))
@@ -160,9 +165,9 @@ func NewMsgRun(caller crypto.Address, send std.Coins, files []*std.MemFile) MsgR
 	return MsgRun{
 		Caller: caller,
 		Send:   send,
-		Package: &std.MemPackage{
+		Package: &gnovm.MemPackage{
 			Name:  "main",
-			Path:  "gno.land/r/" + caller.String() + "/run",
+			Path:  "", // auto set by the handler
 			Files: files,
 		},
 	}
@@ -179,9 +184,13 @@ func (msg MsgRun) ValidateBasic() error {
 	if msg.Caller.IsZero() {
 		return std.ErrInvalidAddress("missing caller address")
 	}
-	if msg.Package.Path == "" { // XXX
-		return ErrInvalidPkgPath("missing package path")
+
+	// Force memPkg path to the reserved run path.
+	wantPath := "gno.land/r/" + msg.Caller.String() + "/run"
+	if path := msg.Package.Path; path != "" && path != wantPath {
+		return ErrInvalidPkgPath(fmt.Sprintf("invalid pkgpath for MsgRun: %q", path))
 	}
+
 	return nil
 }
 

@@ -9,7 +9,8 @@ import (
 
 	// for static files
 	"github.com/gnolang/gno/gno.land/pkg/gnoweb"
-	"github.com/gnolang/gno/tm2/pkg/log"
+	"github.com/gnolang/gno/gno.land/pkg/log"
+	"go.uber.org/zap/zapcore"
 	// for error types
 	// "github.com/gnolang/gno/tm2/pkg/sdk"               // for baseapp (info, status)
 )
@@ -36,13 +37,14 @@ func runMain(args []string) error {
 	fs.StringVar(&cfg.HelpRemote, "help-remote", cfg.HelpRemote, "help page's remote addr")
 	fs.BoolVar(&cfg.WithAnalytics, "with-analytics", cfg.WithAnalytics, "enable privacy-first analytics")
 	fs.StringVar(&bindAddress, "bind", "127.0.0.1:8888", "server listening address")
+	fs.BoolVar(&cfg.WithHTML, "with-html", cfg.WithHTML, "Enable HTML parsing in markdown rendering")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	logger := log.NewTMLogger(os.Stdout)
-	logger.SetLevel(log.LevelDebug)
+	zapLogger := log.NewZapConsoleLogger(os.Stdout, zapcore.DebugLevel)
+	logger := log.ZapLoggerToSlog(zapLogger)
 
 	logger.Info("Running", "listener", "http://"+bindAddress)
 	server := &http.Server{
@@ -54,5 +56,6 @@ func runMain(args []string) error {
 	if err := server.ListenAndServe(); err != nil {
 		logger.Error("HTTP server stopped", " error:", err)
 	}
-	return nil
+
+	return zapLogger.Sync()
 }

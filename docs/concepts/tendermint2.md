@@ -6,7 +6,7 @@ id: tendermint2
 
 **Disclaimer: Tendermint2 is currently part of the Gno monorepo for streamlined development.**
 
-**Once Gno.land is on the mainnet, Tendermint2 will operate independently, including for governance,
+**Once gno.land is on the mainnet, Tendermint2 will operate independently, including for governance,
 on https://github.com/tendermint/tendermint2.**
 
 ## Problems
@@ -22,7 +22,7 @@ on https://github.com/tendermint/tendermint2.**
 * Minimal code - keep total footprint small.
 * Minimal dependencies - all dependencies must get audited, and become part of
   the repo.
-* Modular dependencies - whereever reasonable, make components modular.
+* Modular dependencies - wherever reasonable, make components modular.
 * Completeness - software projects that don't become finished are projects
   that are forever vulnerable. One of the primary goals of the Gno language
   and related works is to become finished within a reasonable timeframe.
@@ -34,9 +34,7 @@ on https://github.com/tendermint/tendermint2.**
   proto3 for encoding/decoding optimization through protoc.
     - MISSION: be the basis for improving the encoding standard from proto3, because
       proto3 length-prefixing is slow, and we need "proto4" or "amino2".
-    - LOOK at the auto-generated proto files!
-      https://github.com/gnolang/gno/blob/master/pkgs/bft/consensus/types/cstypes.proto
-      for example.
+    - LOOK at the [auto-generated proto files](https://github.com/gnolang/gno/blob/master/tm2/pkg/bft/consensus/consensus.proto)!
     - There was work to remove this from the CosmosSDK because
       Amino wasn't ready, but now that it is, it makes sense to incorporate it into
       Tendermint2.
