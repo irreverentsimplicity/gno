@@ -56,7 +56,7 @@ func CreateBasicFlipNFT(player std.Address, gameId string) (string, string) {
 		}
 		flipBasicNFTMetaData := &BasicNFTMetaData{
 			tokenID: tidString,
-			name: "Flippando - the Game",
+			name: "Flippando Basic Board",
 			version: "1.0.0",
 			gameId: currentGame.ID,
 			gameType: currentGame.TileType,

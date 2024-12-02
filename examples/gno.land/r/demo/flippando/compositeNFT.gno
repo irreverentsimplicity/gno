@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	FlipCompositeNFT	= grc721.NewBasicNFT("Flippando Composite NFT", "CFLP")
+	FlipCompositeNFT	= grc721.NewBasicNFT("Flippando Art Gallery", "FLIPAG")
 	compositeNFTtokenIDCounter	uint64
 	children map[string]string
 )

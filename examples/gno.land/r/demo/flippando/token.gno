@@ -18,7 +18,7 @@ type lockedVault struct {
 }
 
 var (
-	flipToken          = grc20.NewBanker("Flippando", "FLIP", 12)
+	flipToken          = grc20.NewBanker("Flippando", "FLIPND", 12)
     // 1000 uFLIP = 1 FLIP
     // max denom 1,000,000,000 FLIP
 	totalLockedSupply  std.Coin = std.NewCoin("FLIP", 0)
